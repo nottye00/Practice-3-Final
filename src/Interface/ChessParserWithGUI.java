@@ -244,14 +244,15 @@ public class ChessParserWithGUI extends JFrame {
 
                 TurnNode whiteNode = new TurnNode(turnNum, whiteMove);
                 if (root == null) {
+                    // First white move is root
                     root = whiteNode;
                     lastWhiteNode = whiteNode;
                 } else {
-                    // El siguiente movimiento blanco es hijo izquierdo del último movimiento negro
+                    // The next white move is left child of the previous black move
                     if (lastBlackNode != null) {
                         lastBlackNode.left = whiteNode;
                     } else {
-                        // Si no hay negro anterior, enlaza blanco con último blanco (caso inicial)
+                        // If no previous black move, attach white move as left child of last white move (for first turn)
                         lastWhiteNode.left = whiteNode;
                     }
                     lastWhiteNode = whiteNode;
@@ -259,11 +260,11 @@ public class ChessParserWithGUI extends JFrame {
 
                 if (blackMove != null) {
                     TurnNode blackNode = new TurnNode(turnNum, blackMove);
-                    // El movimiento negro es hijo derecho del movimiento blanco actual
+                    // Black move is always right child of current white move
                     whiteNode.right = blackNode;
                     lastBlackNode = blackNode;
                 } else {
-                    lastBlackNode = null; // no hay negro en este turno
+                    lastBlackNode = null;
                 }
             }
         }
