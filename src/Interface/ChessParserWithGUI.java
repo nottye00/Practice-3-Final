@@ -4,28 +4,29 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-// Nodo del árbol binario que representa un solo movimiento (blanco o negro) o nodo raíz "Partida"
-class TurnNode {
-    String turnNumber;  // número del turno o "Start"
-    Move move;          // movimiento representado por este nodo, o null si es nodo raíz
-    TurnNode left;      // hijo izquierdo: movimientos negros
-    TurnNode right;     // hijo derecho: movimientos blancos
+// Nuevo: Nodo del árbol binario que representa una jugada individual.
+// Este nodo es más simple, solo guarda la notación de la jugada.
+class MoveNode {
+    String notation; // La notación SAN de la jugada (ej. "d4", "Nf6")
+    MoveNode left;
+    MoveNode right;
 
-    public TurnNode(String turnNumber, Move move) {
-        this.turnNumber = turnNumber;
-        this.move = move;
+    public MoveNode(String notation) {
+        this.notation = notation;
         this.left = null;
         this.right = null;
     }
 }
 
-// Clase que representa una jugada individual en SAN
+// Clase que representa una jugada individual en SAN (reutilizada del código anterior)
 class Move {
     private final String notation;
-    private final String color;
+    private final String color; // "white" or "black"
 
     public Move(String notation, String color) {
         this.notation = notation;
@@ -33,23 +34,26 @@ class Move {
     }
 
     public boolean isValid() {
+        // Expresión regular mejorada para SAN (Simplified Algebraic Notation)
+        // Esta es una versión más robusta que la inicial, pero SAN completo es complejo.
+        // Incluye: movimientos de peón, capturas, movimientos de piezas, enroques,
+        // promoción, jaques, y jaques mates.
+        // NO maneja ambigüedad completa o notaciones complejas de comentarios/variaciones.
         String letter = "[a-h]";
         String number = "[1-8]";
         String square = letter + number;
-        String piece = "[KQRBN]";
-        String castle = "O-O(-O)?";
-        String check = "[+#]?";
-        String promote = "(=[QRBN])?";
+        String piece = "[KQRBN]"; // King, Queen, Rook, Bishop, Knight
+        String capture = "x?"; // optional capture
+        String checkMate = "[+#]?"; // Check or Checkmate
 
-        String advPawn = square + promote + check;
-        String pawnTakes = letter + "x" + square + promote + check;
-        String pawnMove = "(" + advPawn + "|" + pawnTakes + ")";
+        String pawnMove = "(" + square + "|" + letter + "x" + square + ")"; // e4 or exd4
+        String pawnPromotion = pawnMove + "(=[QRBN])?"; // e8=Q
+        String pieceMove = piece + letter + "?" + number + "?" + capture + square; // Nf3, Nbc3, Nxd4
+        String castling = "O-O(-O)?"; // Kingside or Queenside castling
 
-        String disambiguation = "(" + letter + "|" + number + "|" + letter + number + ")?";
-        String pieceMove = piece + disambiguation + "x?" + square + promote + check;
+        String validMovePattern = "^(" + pawnPromotion + "|" + pieceMove + "|" + castling + ")" + checkMate + "$";
 
-        String move = "(" + castle + "|" + pawnMove + "|" + pieceMove + ")";
-        return this.notation.matches(move);
+        return this.notation.matches(validMovePattern);
     }
 
     public String getNotation() {
@@ -61,77 +65,80 @@ class Move {
     }
 }
 
-// Panel para dibujar el árbol binario de movimientos individuales
+// Panel para dibujar el árbol binario de la partida
 class ChessTreePanel extends JPanel {
-    private TurnNode root;
+    private MoveNode root; // Ahora el root es un MoveNode
     private final int nodeWidth = 140;
-    private final int nodeHeight = 50;
-    private final int verticalSpacing = 100;
-    private final int horizontalSpacing = 30;
+    private final int nodeHeight = 60;
+    private final int verticalSpacing = 160;
+    private final int horizontalSpacing = 120; // Espacio entre nodos del mismo nivel
 
-    public ChessTreePanel(TurnNode root) {
+    public ChessTreePanel(MoveNode root) { // Constructor adaptado a MoveNode
         this.root = root;
         setBackground(Color.WHITE);
-        setPreferredSize(new Dimension(1200, 800));
+        setPreferredSize(new Dimension(3000, 2000)); // Tamaño inicial más grande
     }
 
-    private int calculateWidth(TurnNode node) {
-        if (node == null) return 0;
-        int leftWidth = calculateWidth(node.left);
-        int rightWidth = calculateWidth(node.right);
-        int width = Math.max(nodeWidth, leftWidth + rightWidth + horizontalSpacing);
-        return width;
-    }
-
-    private void drawNode(Graphics2D g, TurnNode node, int x, int y) {
+    // Método para dibujar los nodos del árbol
+    private void drawNode(Graphics2D g, MoveNode node, int x, int y, int depth) {
         if (node == null) return;
 
-        int leftWidth = calculateWidth(node.left);
-        int rightWidth = calculateWidth(node.right);
-
-        int leftX = x - (rightWidth + nodeWidth) / 2 - horizontalSpacing / 2;
-        int rightX = x + (leftWidth + nodeWidth) / 2 + horizontalSpacing / 2;
-        int childY = y + verticalSpacing;
-
-        g.setColor(Color.BLACK);
-        if (node.left != null) {
-            g.drawLine(x + nodeWidth / 2, y + nodeHeight, leftX + nodeWidth / 2, childY);
-            drawNode(g, node.left, leftX, childY);
-        }
-        if (node.right != null) {
-            g.drawLine(x + nodeWidth / 2, y + nodeHeight, rightX + nodeWidth / 2, childY);
-            drawNode(g, node.right, rightX, childY);
-        }
-
-        // Nodo raíz "Partida" con color especial
-        if (node.move == null) {
-            g.setColor(new Color(200, 255, 200)); // verde claro para nodo partida
-        } else {
-            // Color según el color del movimiento
-            if ("white".equals(node.move.getColor())) {
-                g.setColor(new Color(220, 220, 255)); // azul claro para blanco
-            } else {
-                g.setColor(new Color(255, 230, 230)); // rojo claro para negro
-            }
+        // Dibuja el nodo actual
+        // Colores basados en la profundidad para simular la imagen (raíz amarilla, otros grises/azules)
+        g.setColor(new Color(230, 240, 255)); // Color por defecto (azul claro)
+        if (depth == 0) {
+            g.setColor(new Color(255, 230, 100)); // Amarillo para la raíz
+        } else if (depth % 2 == 1) {
+            g.setColor(new Color(200, 200, 200)); // Gris para niveles impares (simulando jugadas negras/alternativas)
         }
         g.fillRoundRect(x, y, nodeWidth, nodeHeight, 20, 20);
         g.setColor(Color.BLACK);
         g.drawRoundRect(x, y, nodeWidth, nodeHeight, 20, 20);
 
-        String text = (node.move == null) ? "Partida" : node.turnNumber + ". " + node.move.getNotation();
+        // Dibuja la notación de la jugada en el centro del nodo
+        String nodeText = node.notation;
         FontMetrics fm = g.getFontMetrics();
-        int textWidth = fm.stringWidth(text);
+        int textWidth = fm.stringWidth(nodeText);
+        // Usar color azul para el texto
+        g.setColor(Color.BLUE.darker());
+        g.drawString(nodeText, x + (nodeWidth - textWidth) / 2, y + nodeHeight / 2 + fm.getAscent() / 2 - 5);
 
-        // Color de texto según tipo de nodo
-        if (node.move == null) {
-            g.setColor(Color.GREEN.darker());
-        } else if ("white".equals(node.move.getColor())) {
-            g.setColor(Color.BLUE.darker());
-        } else {
-            g.setColor(Color.RED.darker());
+        // Calcular las posiciones de los hijos
+        int childY = y + verticalSpacing;
+        int leftChildX = x - nodeWidth / 2 - horizontalSpacing;
+        int rightChildX = x + nodeWidth / 2 + horizontalSpacing;
+
+        // Ajuste para centrar el padre si solo tiene un hijo
+        if (node.left != null && node.right == null) {
+            leftChildX = x; // Centrar el hijo izquierdo si no hay derecho
+        } else if (node.left == null && node.right != null) {
+            rightChildX = x; // Centrar el hijo derecho si no hay izquierdo
+        } else if (node.left != null && node.right != null) {
+            // Si tiene ambos hijos, ajustar para que el padre esté en el centro de ellos
+            // Esto es una simplificación, un algoritmo de layout completo haría esto mejor.
+            int midPoint = (leftChildX + nodeWidth / 2 + rightChildX + nodeWidth / 2) / 2;
+            int currentMidPoint = x + nodeWidth / 2;
+            int shift = midPoint - currentMidPoint;
+            leftChildX += shift;
+            rightChildX += shift;
         }
 
-        g.drawString(text, x + (nodeWidth - textWidth) / 2, y + nodeHeight / 2 + 5);
+
+        // Dibujar líneas y nodos hijos
+        g.setStroke(new BasicStroke(2)); // Línea sólida por defecto
+
+        if (node.left != null) {
+            g.setColor(Color.BLACK); // Línea sólida negra para el hijo izquierdo
+            g.drawLine(x + nodeWidth / 2, y + nodeHeight, leftChildX + nodeWidth / 2, childY);
+            drawNode(g, node.left, leftChildX, childY, depth + 1);
+        }
+        if (node.right != null) {
+            g.setColor(Color.GRAY); // Línea gris punteada para el hijo derecho (simulando variación)
+            float[] dashingPattern = {5f, 5f}; // 5 unidades de línea, 5 unidades de espacio
+            g.setStroke(new BasicStroke(2, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f, dashingPattern, 0.0f));
+            g.drawLine(x + nodeWidth / 2, y + nodeHeight, rightChildX + nodeWidth / 2, childY);
+            drawNode(g, node.right, rightChildX, childY, depth + 1);
+        }
     }
 
     @Override
@@ -139,152 +146,141 @@ class ChessTreePanel extends JPanel {
         super.paintComponent(g);
         if (root == null) return;
         Graphics2D g2 = (Graphics2D) g;
-        g2.setStroke(new BasicStroke(2));
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setFont(new Font("SansSerif", Font.BOLD, 12));
+
         int startX = getWidth() / 2 - nodeWidth / 2;
         int startY = 20;
-        drawNode(g2, root, startX, startY);
+        drawNode(g2, root, startX, startY, 0);
     }
 
-    public void setRoot(TurnNode root) {
+    public void setRoot(MoveNode root) { // Setter adaptado a MoveNode
         this.root = root;
         revalidate();
         repaint();
     }
 }
 
-// Clase principal con interfaz para entrada manual y visualización
+// Clase principal con interfaz gráfica y procesamiento del árbol
 public class ChessParserWithGUI extends JFrame {
     private JTextArea inputArea;
     private JButton parseButton;
     private ChessTreePanel treePanel;
-    private JScrollPane treeScrollPane;
 
     public ChessParserWithGUI() {
         super("Chess SAN Parser and Visualizer");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(1300, 900);
+        setSize(1400, 1000);
         setLayout(new BorderLayout());
 
-        // Panel de entrada
         JPanel inputPanel = new JPanel(new BorderLayout());
-        inputPanel.setBorder(BorderFactory.createTitledBorder("Ingrese la partida de ajedrez en notación SAN"));
+        inputPanel.setBorder(BorderFactory.createTitledBorder("Enter Chess Game in SAN Notation"));
 
-        inputArea = new JTextArea(6, 50);
+        inputArea = new JTextArea(8, 60);
         inputArea.setLineWrap(true);
         inputArea.setWrapStyleWord(true);
-        inputArea.setText("");
+        // Texto de ejemplo para facilitar la prueba
+        inputArea.setText("1. d4 d5 2. Bf4 Nf6 3. e3 e6 4. c3 c5 5. Nd2 Nc6 6. Bd3 Bd6 7. Bg3 O-O 8. Ngf3 Qe7 9. Ne5 Nd7 10. Nxc6 bxc6 11. Bxd6 Qxd6 12. Nf3 a5 13. O-O Ba6 14. Re1 Rfb8 15. Rb1 Bxd3 16. Qxd3 c4 17. Qc2 f5 18. Nd2 Rb5 19. b3 cxb3 20. axb3 Rab8 21. Qa2 Qc7 22. c4 Rb4 23. cxd5 cxd5 24. Rbc1 Qb6 25. h3 a4 26. bxa4 Rb2 27. Qa3 Rxd2 28. Qe7 Qd8 29. Qxe6+ Kh8 30. Qxf5 Nf6 31. g4 Ne4 32. Rf1 h6 33. Rc6 Qh4 34. Rc8+ Rxc8 35. Qxc8+ Kh7 36. Qf5");
+
         JScrollPane inputScroll = new JScrollPane(inputArea);
         inputPanel.add(inputScroll, BorderLayout.CENTER);
 
-        parseButton = new JButton("Parsear y Visualizar");
+        parseButton = new JButton("Parse and Visualize");
         inputPanel.add(parseButton, BorderLayout.SOUTH);
 
         add(inputPanel, BorderLayout.NORTH);
 
-        treePanel = new ChessTreePanel(null);
-        treeScrollPane = new JScrollPane(treePanel);
-        add(treeScrollPane, BorderLayout.CENTER);
+        treePanel = new ChessTreePanel(null); // Inicializar con null
+        add(new JScrollPane(treePanel), BorderLayout.CENTER);
 
         parseButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 String gameText = inputArea.getText().trim();
                 if (gameText.isEmpty()) {
-                    JOptionPane.showMessageDialog(ChessParserWithGUI.this, "Por favor ingrese una partida en notación SAN.", "Entrada requerida", JOptionPane.WARNING_MESSAGE);
+                    JOptionPane.showMessageDialog(ChessParserWithGUI.this, "Please enter a chess game in SAN notation.", "Input Required", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
-                parseAndDisplay(gameText);
-            }
-        });
-    }
-
-    private void parseAndDisplay(String gameText) {
-        ChessParser parser = new ChessParser();
-        parser.parseGame(gameText);
-
-        if (!parser.isValid()) {
-            JOptionPane.showMessageDialog(this, "Se detectaron movimientos inválidos. Por favor revise su entrada.", "Entrada inválida", JOptionPane.ERROR_MESSAGE);
-            treePanel.setRoot(null);
-            return;
-        }
-
-        treePanel.setRoot(parser.getRoot());
-        treePanel.setPreferredSize(new Dimension(1200, 800));
-        treePanel.revalidate();
-        treePanel.repaint();
-
-        SwingUtilities.invokeLater(() -> {
-            JViewport viewport = treeScrollPane.getViewport();
-            Dimension viewSize = viewport.getViewSize();
-            Dimension extentSize = viewport.getExtentSize();
-            int x = (viewSize.width - extentSize.width) / 2;
-            int y = 0;
-            viewport.setViewPosition(new Point(x, y));
-        });
-    }
-
-    // Parser con nodo raíz "Partida" y estructura: derecha = blanco, izquierda = negro
-    private static class ChessParser {
-        private TurnNode root = null;
-        private boolean isValid = true;
-
-        public void parseGame(String game) {
-            Pattern turnPattern = Pattern.compile("(\\d+)\\.\\s+([^\\s]+)(?:\\s+(?!\\d+\\.)([^\\s]+))?");
-            Matcher matcher = turnPattern.matcher(game);
-
-            root = new TurnNode("Start", null); // Nodo raíz "Partida"
-            TurnNode lastWhiteNode = null;
-            TurnNode lastBlackNode = null;
-            isValid = true;
-
-            while (matcher.find()) {
-                String turnNum = matcher.group(1);
-                String whiteNotation = matcher.group(2);
-                String blackNotation = matcher.group(3);
-
-                Move whiteMove = new Move(whiteNotation, "white");
-                Move blackMove = blackNotation != null ? new Move(blackNotation, "black") : null;
-
-                if (!whiteMove.isValid()) {
-                    System.out.println("Turno " + turnNum + ": movimiento blanco inválido '" + whiteNotation + "'");
-                    isValid = false;
-                }
-                if (blackMove != null && !blackMove.isValid()) {
-                    System.out.println("Turno " + turnNum + ": movimiento negro inválido '" + blackNotation + "'");
-                    isValid = false;
-                }
-
-                TurnNode whiteNode = new TurnNode(turnNum, whiteMove);
-                TurnNode blackNode = blackMove != null ? new TurnNode(turnNum, blackMove) : null;
-
-                if (lastWhiteNode == null) {
-                    // Primer movimiento blanco hijo derecho de raíz
-                    root.right = whiteNode;
+                // Llamar al nuevo parser
+                MoveNode gameTree = ChessParser.buildTreeFromMatch(gameText);
+                if (gameTree == null) {
+                    JOptionPane.showMessageDialog(ChessParserWithGUI.this, "Error parsing game or no valid moves found.", "Parsing Error", JOptionPane.ERROR_MESSAGE);
+                    treePanel.setRoot(null);
                 } else {
-                    // Movimiento blanco hijo derecho del último blanco
-                    lastWhiteNode.right = whiteNode;
-                }
-                lastWhiteNode = whiteNode;
-
-                if (blackNode != null) {
-                    if (lastBlackNode == null) {
-                        // Primer movimiento negro hijo izquierdo de raíz
-                        root.left = blackNode;
-                    } else {
-                        // Movimiento negro hijo izquierdo del último negro
-                        lastBlackNode.left = blackNode;
-                    }
-                    lastBlackNode = blackNode;
+                    treePanel.setRoot(gameTree);
                 }
             }
+        });
+    }
+
+    // Parser interno: crea árbol binario usando la lógica de BFS
+    private static class ChessParser {
+        // Expresión regular para capturar el número de turno, la jugada blanca y la jugada negra (opcional)
+        private static final String gameTurn = "(\\d+)\\.\\s*([^\\s]+)(?:\\s+(?!\\d+\\.)([^\\s]+))?";
+
+        // Método auxiliar para validar una jugada usando la clase Move
+        private static boolean proveMove(String moveNotation, String turn, String color) {
+            Move move = new Move(moveNotation, color);
+            return move.isValid();
         }
 
-        public TurnNode getRoot() {
+        // Nuevo método para construir el árbol a partir de la cadena de la partida
+        public static MoveNode buildTreeFromMatch(String match) {
+            Matcher matchTurns = Pattern.compile(gameTurn).matcher(match);
+            MoveNode root = new MoveNode("Partida"); // Nodo raíz general para el inicio de la partida
+
+            // Usaremos una cola para mantener el rastro de los nodos disponibles para insertar hijos
+            Queue<MoveNode> availableNodes = new LinkedList<>();
+            availableNodes.add(root);
+
+            while (matchTurns.find()) {
+                String turn = matchTurns.group(1);
+                String white = matchTurns.group(2);
+                String black = matchTurns.group(3); // puede ser null
+
+                MoveNode whiteNode = null;
+                MoveNode blackNode = null;
+
+                // Crear nodos solo si la jugada es válida
+                if (white != null && proveMove(white, turn, "white")) {
+                    whiteNode = new MoveNode(turn + ". " + white); // Incluir el número de turno en la notación
+                } else {
+                    // Si una jugada blanca es inválida, el resto de la partida es inválida para este parser
+                    System.err.println("Invalid white move: " + white + " in turn " + turn);
+                    return null; // Retornar null para indicar un error
+                }
+
+                if (black != null && proveMove(black, turn, "black")) {
+                    blackNode = new MoveNode(black);
+                } else if (black != null) {
+                    // Si una jugada negra es inválida
+                    System.err.println("Invalid black move: " + black + " in turn " + turn);
+                    return null; // Retornar null para indicar un error
+                }
+
+                // Insertar en el árbol binario usando BFS para encontrar el siguiente lugar disponible
+                // Esta lógica llenará el árbol nivel por nivel, de izquierda a derecha.
+                if (!availableNodes.isEmpty()) {
+                    MoveNode parentNode = availableNodes.poll(); // Obtener el siguiente nodo disponible
+
+                    if (whiteNode != null) {
+                        parentNode.left = whiteNode;
+                        availableNodes.add(whiteNode); // Añadir el nodo blanco a la cola para futuros hijos
+                    }
+
+                    if (blackNode != null) {
+                        parentNode.right = blackNode;
+                        availableNodes.add(blackNode); // Añadir el nodo negro a la cola para futuros hijos
+                    }
+                } else {
+                    // Esto no debería ocurrir si el árbol se está construyendo correctamente
+                    // y hay suficientes nodos disponibles en la cola.
+                    System.err.println("No available parent node to insert moves.");
+                    break;
+                }
+            }
+
             return root;
-        }
-
-        public boolean isValid() {
-            return isValid;
         }
     }
 
