@@ -1,4 +1,5 @@
 package Interface;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -6,18 +7,16 @@ import java.awt.event.ActionListener;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-// Nodo del árbol binario que representa un turno con jugadas blanca y negra
+// Nodo del árbol binario que representa un solo movimiento (blanco o negro)
 class TurnNode {
-    String turnNumber;
-    Move whiteMove;
-    Move blackMove;
-    TurnNode left;  // hijo izquierdo: jugada blanca
-    TurnNode right; // hijo derecho: jugada negra
+    String turnNumber;  // número del turno (para referencia)
+    Move move;          // movimiento representado por este nodo
+    TurnNode left;      // hijo izquierdo: siguiente movimiento blanco
+    TurnNode right;     // hijo derecho: siguiente movimiento negro
 
-    public TurnNode(String turnNumber, Move whiteMove, Move blackMove) {
+    public TurnNode(String turnNumber, Move move) {
         this.turnNumber = turnNumber;
-        this.whiteMove = whiteMove;
-        this.blackMove = blackMove;
+        this.move = move;
         this.left = null;
         this.right = null;
     }
@@ -62,7 +61,7 @@ class Move {
     }
 }
 
-// Panel para dibujar el árbol binario de la partida
+// Panel para dibujar el árbol binario de movimientos individuales
 class ChessTreePanel extends JPanel {
     private TurnNode root;
     private final int nodeWidth = 140;
@@ -104,29 +103,30 @@ class ChessTreePanel extends JPanel {
             drawNode(g, node.right, rightX, childY);
         }
 
-        Color bgColor = new Color(220, 220, 255);
-        if (node.blackMove != null) {
-            bgColor = new Color(255, 230, 230);
+        // Color según el color del movimiento
+        Color bgColor;
+        if ("white".equals(node.move.getColor())) {
+            bgColor = new Color(220, 220, 255); // azul claro para blanco
+        } else {
+            bgColor = new Color(255, 230, 230); // rojo claro para negro
         }
         g.setColor(bgColor);
         g.fillRoundRect(x, y, nodeWidth, nodeHeight, 20, 20);
         g.setColor(Color.BLACK);
         g.drawRoundRect(x, y, nodeWidth, nodeHeight, 20, 20);
 
-        String whiteText = node.turnNumber + ". " + node.whiteMove.getNotation();
-        String blackText = node.blackMove != null ? node.blackMove.getNotation() : "";
-
+        String text = node.turnNumber + ". " + node.move.getNotation();
         FontMetrics fm = g.getFontMetrics();
-        int whiteTextWidth = fm.stringWidth(whiteText);
-        int blackTextWidth = fm.stringWidth(blackText);
+        int textWidth = fm.stringWidth(text);
 
-        g.setColor(Color.BLUE.darker());
-        g.drawString(whiteText, x + (nodeWidth - whiteTextWidth) / 2, y + nodeHeight / 2 - 5);
-
-        if (!blackText.isEmpty()) {
+        // Color de texto según color de movimiento
+        if ("white".equals(node.move.getColor())) {
+            g.setColor(Color.BLUE.darker());
+        } else {
             g.setColor(Color.RED.darker());
-            g.drawString(blackText, x + (nodeWidth - blackTextWidth) / 2, y + nodeHeight - 10);
         }
+
+        g.drawString(text, x + (nodeWidth - textWidth) / 2, y + nodeHeight / 2 + 5);
     }
 
     @Override
@@ -220,9 +220,9 @@ public class ChessParserWithGUI extends JFrame {
             Pattern turnPattern = Pattern.compile("(\\d+)\\.\\s+([^\\s]+)(?:\\s+(?!\\d+\\.)([^\\s]+))?");
             Matcher matcher = turnPattern.matcher(game);
 
-            TurnNode prevNode = null;
-            TurnNode firstNode = null;
-
+            TurnNode lastWhiteNode = null;
+            TurnNode lastBlackNode = null;
+            root = null;
             isValid = true;
 
             while (matcher.find()) {
@@ -233,34 +233,39 @@ public class ChessParserWithGUI extends JFrame {
                 Move whiteMove = new Move(whiteNotation, "white");
                 Move blackMove = blackNotation != null ? new Move(blackNotation, "black") : null;
 
-                boolean whiteValid = whiteMove.isValid();
-                boolean blackValid = blackMove == null || blackMove.isValid();
-
-                if (!whiteValid) {
+                if (!whiteMove.isValid()) {
                     System.out.println("Turn " + turnNum + ": invalid white move '" + whiteNotation + "'");
                     isValid = false;
                 }
-                if (blackMove != null && !blackValid) {
+                if (blackMove != null && !blackMove.isValid()) {
                     System.out.println("Turn " + turnNum + ": invalid black move '" + blackNotation + "'");
                     isValid = false;
                 }
 
-                TurnNode currentNode = new TurnNode(turnNum, whiteMove, blackMove);
-
-                if (firstNode == null) firstNode = currentNode;
-
-                // Construcción del árbol binario real:
-                // Cada nodo apunta a los movimientos blanco y negro como hijos
-                // Aquí vamos enlazando los nodos en secuencia como hijo izquierdo para la jugada blanca
-                // y derecho para la jugada negra, pero para la estructura general de la partida,
-                // los turnos se enlazan en hijo izquierdo del nodo anterior para crear una lista de turnos.
-                if (prevNode != null) {
-                    prevNode.left = currentNode; // siguiente turno como hijo izquierdo
+                TurnNode whiteNode = new TurnNode(turnNum, whiteMove);
+                if (root == null) {
+                    root = whiteNode;
+                    lastWhiteNode = whiteNode;
+                } else {
+                    // El siguiente movimiento blanco es hijo izquierdo del último movimiento negro
+                    if (lastBlackNode != null) {
+                        lastBlackNode.left = whiteNode;
+                    } else {
+                        // Si no hay negro anterior, enlaza blanco con último blanco (caso inicial)
+                        lastWhiteNode.left = whiteNode;
+                    }
+                    lastWhiteNode = whiteNode;
                 }
-                prevNode = currentNode;
-            }
 
-            root = firstNode;
+                if (blackMove != null) {
+                    TurnNode blackNode = new TurnNode(turnNum, blackMove);
+                    // El movimiento negro es hijo derecho del movimiento blanco actual
+                    whiteNode.right = blackNode;
+                    lastBlackNode = blackNode;
+                } else {
+                    lastBlackNode = null; // no hay negro en este turno
+                }
+            }
         }
 
         public TurnNode getRoot() {
